@@ -1,5 +1,7 @@
+import asyncio
 import logging
 import os
+import time
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, ContextTypes, CallbackQueryHandler
 from dotenv import load_dotenv
@@ -10,6 +12,7 @@ from bot.telegram_osint import lookup_public_telegram
 load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN", "").strip()
 ADMIN_IDS = {int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip().isdigit()}
+TG_COOLDOWN_SECONDS = 10
 
 logging.basicConfig(format="%(asctime)s | %(levelname)s | %(name)s | %(message)s", level=logging.INFO)
 log = logging.getLogger("mchawe-bot")
@@ -59,10 +62,17 @@ async def tg_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("طريقة الاستخدام: /tg username")
         return
+    now = time.monotonic()
+    last = context.user_data.get("last_tg_lookup", 0)
+    remaining = TG_COOLDOWN_SECONDS - (now - last)
+    if remaining > 0:
+        await update.message.reply_text(f"⏳ انتظر {int(remaining) + 1} ثوانٍ قبل البحث التالي.")
+        return
+    context.user_data["last_tg_lookup"] = now
     username = context.args[0].strip()
     status = await update.message.reply_text("⏳ جارٍ البحث في المعاينات العامة...")
     try:
-        result = await __import__("asyncio").to_thread(lookup_public_telegram, username)
+        result = await asyncio.to_thread(lookup_public_telegram, username)
         await status.edit_text(result, disable_web_page_preview=True)
     except Exception:
         log.exception("Telegram public lookup failed")
@@ -94,7 +104,7 @@ async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("هذا الأمر للمشرف فقط.")
         return
     await update.message.reply_text(
-        f"🛡️ لوحة المشرف\nمعرّفك: `{update.effective_user.id}`\nالإصدار: 2.0.0\nالحالة: يعمل",
+        f"🛡️ لوحة المشرف\nمعرّفك: `{update.effective_user.id}`\nالإصدار: 2.1.0\nالحالة: يعمل",
         parse_mode="Markdown")
 
 async def post_init(app: Application):
